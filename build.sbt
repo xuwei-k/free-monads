@@ -1,11 +1,11 @@
-
-name := "free-logging"
-
 organization := "com.timperrett"
 
 libraryDependencies ++= Seq(
-  "org.scalaz" %% "scalaz-core" % "7.0.4",
   "ch.qos.logback" % "logback-classic" % "1.0.13")
+
+val root = Project("free-logging", file(".")).dependsOn(
+  ProjectRef(uri("git://github.com/scalaz/scalaz.git#88e0698ea"), "core")
+)
 
 resolvers += "Sonatype OSS Snapshots" at
   "https://oss.sonatype.org/content/repositories/snapshots"
