@@ -1,25 +1,22 @@
 package example 
 
-import scalaz.{~>,Id,Free,Functor}, Free.Return, Free.Suspend, Id.Id
+import scalaz._
+import Free._, Id.Id
 
 // needs to be covarient because of scalaz.Free
 sealed trait LogF[+A] 
 
 object Logging {
-  type Log[A] = Free[LogF, A]
+  type Log[A] = FreeC[LogF, A]
 
-  implicit def logFFunctor[B]: Functor[LogF] = new Functor[LogF]{
-    def map[A,B](fa: LogF[A])(f: A => B): LogF[B] = 
-      fa match {
-        case Debug(msg,a) => Debug(msg,f(a))
-        case Info(msg,a)  => Info(msg,f(a))
-        case Warn(msg,a)  => Warn(msg,f(a))
-        case Error(msg,a) => Error(msg,f(a))
-      }
-  }
+  def freeC[T[_], A](ta: T[A]): FreeC[T, A] =
+    Free.liftF[({type λ[α]=Coyoneda[T, α]})#λ, A](Coyoneda(ta))
 
-  implicit def logFToFree[A](logf: LogF[A]): Free[LogF,A] = 
-    Suspend[LogF, A](Functor[LogF].map(logf)(a => Return[LogF, A](a))) 
+  def interpret[M[_], N[_], A](f: N ~> M, c: FreeC[N, A])(implicit M: Monad[M]): M[A] =
+    c.resume match {
+      case \/-(a) => M.pure(a)
+      case -\/(a) => M.bind(f(a.fi))(x => interpret(f, a.k(x)))
+    }
 
   case class Debug[A](msg: String, o: A) extends LogF[A]
   case class Info[A](msg: String, o: A) extends LogF[A]
@@ -27,10 +24,10 @@ object Logging {
   case class Error[A](msg: String, o: A) extends LogF[A]
 
   object log {
-    def debug(msg: String): Log[Unit] = Debug(msg, ())
-    def info(msg: String): Log[Unit]  = Info(msg, ())
-    def warn(msg: String): Log[Unit]  = Warn(msg, ())
-    def error(msg: String): Log[Unit] = Error(msg, ())
+    def debug(msg: String): Log[Unit] = freeC(Debug(msg, ()))
+    def info(msg: String): Log[Unit]  = freeC(Info(msg, ()))
+    def warn(msg: String): Log[Unit]  = freeC(Warn(msg, ()))
+    def error(msg: String): Log[Unit] = freeC(Error(msg, ()))
   }
 }
 
@@ -55,7 +52,7 @@ object Println {
   }
 
   def apply[A](log: Log[A]): A = 
-    log.runM(exe.apply[Log[A]])
+    interpret(exe, log)
 }
 
 /**
@@ -77,13 +74,13 @@ object SLF4J {
   }
 
   def apply[A](log: Log[A]): A = 
-    log.runM(exe.apply[Log[A]])
+    interpret(exe, log)
 }
 
 object Main {
   import Logging.log
 
-  val program: Free[LogF, Unit] = 
+  val program: FreeC[LogF, Unit] =
     for {
       a <- log.info("fooo")
       b <- log.error("OH NOES")
